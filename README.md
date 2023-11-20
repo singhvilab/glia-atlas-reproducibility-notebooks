@@ -36,7 +36,7 @@ The following packages need to be installed for running the notebooks, which can
 
 ## Citations
 ------------------------------------------
-Worm glia atlas manuscript is available on [bioRxiv](https://www.biorxiv.org/content/10.1101/2023.03.21.533668v1). Please cite our paper if you use these tutorials for your analyses:
+Worm glia atlas manuscript is available on [bioRxiv](https://www.biorxiv.org/content/10.1101/2023.03.21.533668v1):
 
 ```
 @article {Purice2023.03.21.533668,
