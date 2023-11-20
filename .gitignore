@@ -1,0 +1,10 @@
+.h5ad
+.csv 
+.xlsx
+.txt
+figures_notebooks/figure_*/figures/
+figures_notebooks/figure_*/*.csv
+figures_notebooks/figure_*/*.txt
+figures_notebooks/supp_figure_*/figures/
+figures_notebooks/supp_figure_*/*.csv
+figures_notebooks/supp_figure_*/*.txt
