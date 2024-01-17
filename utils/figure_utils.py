@@ -25,7 +25,7 @@ import tqdm
 
 # utils function for querying pairwise results
 def get_pairwise_results(ad_data, cluster_id, filename=None,
-                         heatmap_color=[[0,'rgb(250,250,250)'], [1,'rgb(102,0,204)']], heatmap_min_color=0, heatmap_max_color=4, plotly_color_template='plotly_white'):
+                         heatmap_color=[[0,'rgb(250,250,250)'], [1,'rgb(102,0,204)']], heatmap_min_color=0, heatmap_max_color=4, plotly_color_template='plotly_white', get_ordered_genes=False):
     '''
         [Summary]
             Creates a plotly stacked plot consisting of a histogram and a heatmap with shared x-axes to view
@@ -40,7 +40,7 @@ def get_pairwise_results(ad_data, cluster_id, filename=None,
             plotly_color_template
         [Return]
     '''
-    # Get pairwise results
+    # Get pairwise results -- in order of ranking
     cluster_data = ad_data.varm['pairwise_cluster_count'].loc[:, str(cluster_id)].sort_values(ascending=False).to_frame().copy()
     cluster_data = cluster_data[cluster_data.iloc[:, 0] > 0]
     exp_mat = ad_data.varm['cluster_means'].loc[cluster_data.index]
@@ -123,6 +123,11 @@ def get_pairwise_results(ad_data, cluster_id, filename=None,
             
             subplot.write_html(html_filename)
             subplot.write_image(png_filename)
+            
+    # return the genes if specified
+    if get_ordered_genes:
+        ranked_genes = exp_mat.index.tolist()
+        return ranked_genes
             
 # utils function -- computing dendrogram -- figure 5
 def compute_linkage(data_obsm, data_obs_index, data_obs_label, feature_names, 
@@ -259,8 +264,8 @@ def filter_gene_expression(ad_data, cluster_labels, target_genes, percent_group_
         return gene_sets
 
 
-# utils functions for ttest of gene expression between herm and males -- adds annotation
-# modified version of: https://stackoverflow.com/questions/67505252/plotly-box-p-value-significant-annotation
+# utils functions for ttest of gene expression between herm and males -- adds annotation to the violin plot
+# adapted from: https://stackoverflow.com/questions/67505252/plotly-box-p-value-significant-annotation
 def add_p_value_annotation(fig, array_columns, subplot=None, _format=dict(interline=0.07, text_height=1.07, color='black',line_placement=0.2)):
     ''' Adds notations giving the p-value between two box plot data (t-test two-sided comparison)
     
@@ -316,34 +321,24 @@ def add_p_value_annotation(fig, array_columns, subplot=None, _format=dict(interl
         #print('0:', fig_dict['data'][data_pair[0]]['name'], fig_dict['data'][data_pair[0]]['xaxis'])
         #print('1:', fig_dict['data'][data_pair[1]]['name'], fig_dict['data'][data_pair[1]]['xaxis'])
 
-        # Get the p-value
+        # Get the p-value (perform t-test)
         pvalue = stats.ttest_ind(
             fig_dict['data'][data_pair[0]]['y'],
             fig_dict['data'][data_pair[1]]['y'],
             equal_var=False,
         )[1]
-        # if pvalue >= 0.05:
-        #     symbol = 'ns'
-        # elif pvalue >= 0.01: 
-        #     symbol = '*'
-        # elif pvalue >= 0.001:
-        #     symbol = '**'
-        # elif pvalue >= 0.0001:
-        #     symbol = '***'
-        # else:
-        #     symbol = '****'
             
-# should probably re run this iw th the following:
-        if pvalue >= 0.05: 
-            symbol = 'ns' 
+        # should probably re run this wth the following:
+        if pvalue > 0.05: 
+            symbol = '(p>0.05)<br>ns' 
         elif pvalue < 0.05 and pvalue >= 0.01: 
-            symbol = '*' 
+            symbol = '(p<0.05)<br>*' 
         elif pvalue < 0.01 and pvalue >= 0.001: 
-            symbol = '**' 
+            symbol = '(p<0.01)<br>**' 
         elif pvalue < 0.001 and pvalue >= 0.0001: 
-            symbol = '***' 
+            symbol = '(p<0.001)<br>***' 
         else: 
-            symbol = '****'
+            symbol = '(p<0.0001)<br>****'
 
         # Vertical line
         fig.add_shape(type="line",
@@ -381,14 +376,24 @@ def add_p_value_annotation(fig, array_columns, subplot=None, _format=dict(interl
 
 # utils function for ttest of gene expression between herm and males -- creates, render and saves the plot
 # dependent on add_p_value_annotation
-def sexes_gene_expression_comparison(ad_data, gene_name, herm_color='blue', male_color='red', custom_form={'interline': 0.07, 'text_height': 1.07, 'color': 'gray', 'line_placement': -0.1}, filename=None):
-    # Create a DataFrame for gene expression and sex information
-    gene_expression = pd.DataFrame(ad_data[:, gene_name].X.toarray(),
-                                    index=ad_data.obs_names,
-                                    columns=[gene_name])
-    gene_expression.loc[:, 'sex'] = ad_data.obs['sex'].values.copy()
-
+def sexes_gene_expression_comparison(ad_data, gene_name, herm_color='blue', male_color='red', 
+                                     custom_form={'interline': 0.07, 'text_height': 1.07, 'color': 'gray', 'line_placement': -0.1}, filename=None, layer='magic_imputed_postBC', bandwidth=None, yrange=None):
+    # check if layer is present or not
+    if layer:
+        if layer not in ad_data.layers.keys():
+            raise KeyError(f'`{layer}` not found in the anndata object.')
+        # Create a DataFrame for gene expression and sex information
+        gene_expression = pd.DataFrame(ad_data[:,gene_name].layers[layer].copy(),
+                                       index=ad_data.obs_names,
+                                       columns=[gene_name])
+        gene_expression.loc[:, 'sex'] = ad_data.obs['sex'].values.copy()
     
+    else:
+        # Create a DataFrame for gene expression and sex information
+        gene_expression = pd.DataFrame(ad_data[:, gene_name].X.toarray(),
+                                        index=ad_data.obs_names,
+                                        columns=[gene_name])
+        gene_expression.loc[:, 'sex'] = ad_data.obs['sex'].values.copy()
     
     # Plot the distributions
     color_map = {'Hermaphrodite': herm_color, 'Male': male_color}
@@ -401,7 +406,8 @@ def sexes_gene_expression_comparison(ad_data, gene_name, herm_color='blue', male
         width=700,
         height=900,
         plot_bgcolor='rgba(0,0,0,0)',
-        yaxis=dict(title=f'<i>{gene_name}</i> expression'),
+        yaxis=dict(title=f'<i>{gene_name}</i> expression', ticksuffix="   "),
+        xaxis=dict(tickprefix="   "),
         showlegend=True,
         title=dict(text=f'<i><b>{gene_name}</b></i> Expression', font=dict(size=25)),
         font=dict(family='Arial', color='black'),
@@ -410,12 +416,18 @@ def sexes_gene_expression_comparison(ad_data, gene_name, herm_color='blue', male
 
     fig.update_traces(box_visible=False, meanline_visible=True,
                       opacity=0.9, marker_line_color='rgba(0,0,0,0)', line=dict(width=0),
-                      marker_line_width=0.5, showlegend=False, width=0.98, marker_size=4)
+                      marker_line_width=0.5, showlegend=False, width=0.98, marker_size=4, bandwidth=bandwidth)
     
     fig.update_xaxes(showgrid=False, tickangle=90, tickfont=dict(family='Arial', size=18),
                      showline=True, gridcolor='lightgray', linecolor='black')
+
+    # set yrange
+    if yrange is None:
+        # default 
+        yrange = [-0.001, max_val + 0.3]
+        
     fig.update_yaxes(showgrid=False, tickfont=dict(family='Arial', size=20),
-                     showline=True, gridcolor='lightgray', range=[-0.001, max_val + 0.5], linecolor='black')
+                     showline=True, gridcolor='lightgray', linecolor='black', range=yrange)
 
     # Perform t-test and add p-value annotation
     herm_values = gene_expression[gene_expression['sex'] == 'Hermaphrodite'][gene_name]
@@ -428,3 +440,5 @@ def sexes_gene_expression_comparison(ad_data, gene_name, herm_color='blue', male
     if filename:
         fig.write_image(f'{filename}.png')
         fig.write_html(f'{filename}.html')
+
+# pairwise differential analyis
